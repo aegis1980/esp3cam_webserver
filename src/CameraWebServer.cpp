@@ -2,7 +2,6 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
-#include <ESP32Servo.h> 
 
 //
 // WARNING!!! PSRAM IC required for UXGA resolution and high JPEG quality
@@ -26,16 +25,8 @@ const char* ssid = "HAL9000";
 const char* password = "9895363Pass";
 
 
-Servo myservo;  // create servo object to control a servo
-
-// Possible PWM GPIO pins on the ESP32: 0(used by on-board button),2,4,5(used by on-board LED),12-19,21-23,25-27,32-33 
-int servoPin = 12;      // GPIO pin used to connect the servo control (digital out)
-
-
-
-
-
 void startCameraServer();
+void setupLedFlash(int pin);
 
 void setup() {
   Serial.begin(115200);
@@ -57,23 +48,37 @@ void setup() {
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sscb_sda = SIOD_GPIO_NUM;
-  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
+  config.frame_size = FRAMESIZE_UXGA;
+  config.pixel_format = PIXFORMAT_JPEG;  // for streaming
+  //config.pixel_format = PIXFORMAT_RGB565; // for face detection/recognition
+  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.jpeg_quality = 12;
+  config.fb_count = 1;
   
   // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
   //                      for larger pre-allocated frame buffer.
-  if(psramFound()){
-    config.frame_size = FRAMESIZE_UXGA;
-    config.jpeg_quality = 10;
-    config.fb_count = 2;
+  if (config.pixel_format == PIXFORMAT_JPEG) {
+    if (psramFound()) {
+      config.jpeg_quality = 10;
+      config.fb_count = 2;
+      config.grab_mode = CAMERA_GRAB_LATEST;
+    } else {
+      // Limit the frame size when PSRAM is not available
+      config.frame_size = FRAMESIZE_SVGA;
+      config.fb_location = CAMERA_FB_IN_DRAM;
+    }
   } else {
-    config.frame_size = FRAMESIZE_SVGA;
-    config.jpeg_quality = 12;
-    config.fb_count = 1;
+    // Best option for face detection/recognition
+    config.frame_size = FRAMESIZE_240X240;
+#if CONFIG_IDF_TARGET_ESP32S3
+    config.fb_count = 2;
+#endif
   }
 
 #if defined(CAMERA_MODEL_ESP_EYE)
@@ -103,7 +108,14 @@ void setup() {
   s->set_hmirror(s, 1);
 #endif
 
+// Setup LED FLash if LED pin is defined in camera_pins.h
+#if defined(LED_GPIO_NUM)
+  setupLedFlash(LED_GPIO_NUM);
+#endif
+
+
   WiFi.begin(ssid, password);
+  WiFi.setSleep(false);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -113,7 +125,7 @@ void setup() {
   Serial.println("WiFi connected");
 
 
-  if (!MDNS.begin("esp32c2")) {
+  if (!MDNS.begin("esp32cam")) {
       Serial.println("Error setting up MDNS responder!");
       while(1){
           delay(1000);
@@ -125,19 +137,6 @@ void setup() {
   Serial.print("Camera Ready! Use 'http://");
   Serial.print(WiFi.localIP());
   Serial.println("' to connect");
-
-
-  	// Allow allocation of all timers
-	ESP32PWM::allocateTimer(0);
-	ESP32PWM::allocateTimer(1);
-	ESP32PWM::allocateTimer(2);
-	ESP32PWM::allocateTimer(3);
-  myservo.setPeriodHertz(50);// Standard 50hz servo
-  myservo.attach(servoPin, 500, 2400);   // attaches the servo on pin 18 to the servo object
-                                         // using SG90 servo min/max of 500us and 2400us
-                                         // for MG995 large servo, use 1000us and 2000us,
-                                         // which are the defaults, so this line could be
-                                         // "myservo.attach(servoPin);"
 }
 
 void loop() {

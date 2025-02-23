@@ -1,12 +1,6 @@
-# LibbyCam firmware
-
-Libby is what I am calling my bird-scarer robot.
-
-This repo is the firmware for the camera component used to track robot on lawn.
+# Firmware
 
 WebCam codes based on expressif sample **.ino* code (installed in Arduino IDE following this instructions).
-
-LibbyCam 'hardware' consists two ESP32Cam units. mounted on servos. Feeds from these two cameras are  stitiched together to created panarama.
 
 
 ## Additional stuff added
